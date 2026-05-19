@@ -8,8 +8,8 @@ app = Flask(__name__)
 CORS(app)
 
 # ========== НАСТРОЙКИ (ЗАМЕНИ НА СВОИ) ==========
-BOT_TOKEN = "ТВОЙ_ТОКЕН_БОТА"
-CHAT_ID = "ТВОЙ_ID_ТЕЛЕГРАМА"
+BOT_TOKEN = "8820194857:AAEcT1qBpODtvkUK58MfJT77_U9iVRplapg"
+CHAT_ID = "912559442"
 
 def send_tg(text, file_bytes=None, filename="file"):
     """Отправка текста или файла в Telegram"""
